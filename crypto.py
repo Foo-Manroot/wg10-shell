@@ -359,7 +359,6 @@ class Crypto ():
 
         print ("Data:      '{:s}'".format (binascii.hexlify (data).decode ("utf-8")))
         print ("Encrypted: '{:s}'".format (binascii.hexlify (encrypted).decode ("utf-8")))
-        print ("Data:      '{:s}'".format (binascii.hexlify (data).decode ("utf-8")))
         print ("Signature: '{:s}'".format (binascii.hexlify (signature).decode ("utf-8")))
 
 
@@ -780,20 +779,25 @@ class Shell (cmd.Cmd):
                 - data (an int array)
                 - SW1
                 - SW2
-            , or None, if there has been an error
+            , or (None, None, None), if there has been an error
         """
         if not self.sc_reader:
             print ("No connection to the reader. Please, use the command 'connect'")
-            return None
+            return (None, None, None)
 
         else:
             try:
 
-                return self.sc_reader.connection.transmit (cmd)
+                ret = self.sc_reader.connection.transmit (cmd)
+                if ret:
+                    return ret
+                else:
+                    return (None, None, None)
 
             except Exception as e:
                 print ("ERROR: " + str (e))
-                return None
+                return (None, None, None)
+
 
 
 
