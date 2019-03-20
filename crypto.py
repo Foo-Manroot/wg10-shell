@@ -41,6 +41,7 @@ class SmartCardCommands (Enum):
     """
     GET_RESPONSE = lambda length: [ 0, 0xc0, 0, 0, length ]
     INTERNAL_AUTHN = lambda challenge: [ 0x00, 0x88, 0x00, 0x00, 0x08 ] + challenge
+    INTERNAL_AUTHN_LOCAL = lambda challenge: [ 0x00, 0x88, 0x00, 0x80, 0x08 ] + challenge
     SELECT_MF = lambda mf_id: [ 0x00, 0xa4, 0x04, 0x00, len (mf_id) ] + mf_id
     SELECT_DF = lambda df_id: [ 0x00, 0xa4, 0x04, 0x00, len (df_id) ] + df_id
     SELECT_EF = lambda ef_id: [ 0x00, 0xa4, 0x02, 0x00, len (ef_id) ] + ef_id
@@ -804,7 +805,10 @@ class Shell (cmd.Cmd):
         The smartcard has to be connected first
         """
         # We could generate a random number; but we don't really care about it right now
-        cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
+        if("-l" in args):
+            cmd = SmartCardCommands.INTERNAL_AUTHN_LOCAL ([0, 1, 2, 3, 4, 5, 6, 7])
+        else:
+            cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
         res = self.send (cmd)
 
         if not res:
