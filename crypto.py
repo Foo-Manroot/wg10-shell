@@ -807,6 +807,8 @@ class Shell (cmd.Cmd):
         number: 0x0001020304050607
 
         The smartcard has to be connected first
+
+        If you specify the '-l' flag, the command sent will be INTERNAL
         """
         # We could generate a random number; but we don't really care about it right now
         if("-l" in args):
@@ -900,7 +902,7 @@ class Shell (cmd.Cmd):
         signature = list (self.crypto.sign (bytes (cmd)))
 
         if not signature:
-            print ("The signature couldn't be claculated")
+            print ("The signature couldn't be calculated")
             return None
 
         recv = self.send (cmd + signature [-3:])
