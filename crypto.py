@@ -39,12 +39,12 @@ class SmartCardCommands (Enum):
     """
     Collection of lambda functions to build the proper messages
     """
-    GET_RESPONSE = lambda length: [ 0x00, 0xC0, 0x00, 0x00, length ]
+    GET_RESPONSE = lambda length: [ 0, 0xc0, 0, 0, length ]
     INTERNAL_AUTHN = lambda challenge: [ 0x00, 0x88, 0x00, 0x00, 0x08 ] + challenge
-    SELECT_MF = lambda mf_id: [ 0x00, 0xA4, 0x04, 0x00, len (mf_id) ] + mf_id
-    SELECT_DF = lambda df_id: [ 0x00, 0xA4, 0x04, 0x00, len (df_id) ] + df_id
-    SELECT_EF = lambda ef_id: [ 0x00, 0xA4, 0x02, 0x00, len (ef_id) ] + ef_id
-    UPDATE_BINARY = lambda data: [ 0x00, 0xD6, 0x00, 0x00, len (data) ] + data
+    INTERNAL_AUTHN_LOCAL = lambda challenge: [ 0x00, 0x88, 0x00, 0x80, 0x08 ] + challenge
+    SELECT_MF = lambda mf_id: [ 0x00, 0xa4, 0x04, 0x00, len (mf_id) ] + mf_id
+    SELECT_DF = lambda df_id: [ 0x00, 0xa4, 0x04, 0x00, len (df_id) ] + df_id
+    SELECT_EF = lambda ef_id: [ 0x00, 0xa4, 0x02, 0x00, len (ef_id) ] + ef_id
 
 
 
@@ -347,12 +347,13 @@ class Crypto ():
 
         data = command [5:]
 
-        signature = self.sign (command)
+        signature = self.sign (command)[-3:]
 
         encrypted = b''
         if data:
             encrypted = pyDes.triple_des (self.SK
                                     , IV = b'\x00' * 8
+                                    , mode = pyDes.CBC
                                     , pad = '\x00'
                     ).encrypt (data)
 
@@ -804,7 +805,10 @@ class Shell (cmd.Cmd):
         The smartcard has to be connected first
         """
         # We could generate a random number; but we don't really care about it right now
-        cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
+        if("-l" in args):
+            cmd = SmartCardCommands.INTERNAL_AUTHN_LOCAL ([0, 1, 2, 3, 4, 5, 6, 7])
+        else:
+            cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
         res = self.send (cmd)
 
         if not res:
@@ -939,13 +943,12 @@ class Shell (cmd.Cmd):
             print ("ERROR: Odd-length string")
             return None
 
+        # We could generate a random number; but we don't really care about it right now
         mf_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
         cmd = SmartCardCommands.SELECT_MF (mf_id)
         res = self.send (cmd)
         # Whether the command executed successfully or not, the selection changed
         self.selected_mf = None
-        # The selected EF is also unselected
-        self.selected_ef = None
 
         if not res:
             print ("Couldn't get a response from the SmartCard")
@@ -999,13 +1002,12 @@ class Shell (cmd.Cmd):
             print ("ERROR: Odd-length string")
             return None
 
+        # We could generate a random number; but we don't really care about it right now
         df_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
         cmd = SmartCardCommands.SELECT_DF (df_id)
         res = self.send (cmd)
         # Whether the command executed successfully or not, the selection changed
         self.selected_df = None
-        # The selected EF is also unselected
-        self.selected_ef = None
 
         if not res:
             print ("Couldn't get a response from the SmartCard")
@@ -1025,7 +1027,7 @@ class Shell (cmd.Cmd):
             # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
             if (res [1] == 0x90) and (res [2] == 0x00):
 
-                self.selected_df = args
+                self.selected_mf = args
                 print ("Selected DF '{:s}'".format (args))
 
             else:
@@ -1058,6 +1060,7 @@ class Shell (cmd.Cmd):
             print ("ERROR: Odd-length string")
             return None
 
+        # We could generate a random number; but we don't really care about it right now
         ef_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
         cmd = SmartCardCommands.SELECT_EF (ef_id)
         res = self.send (cmd)
@@ -1095,48 +1098,6 @@ class Shell (cmd.Cmd):
             print ("EF not selected")
 
 
-
-
-    def do_write_binary (self, args):
-        """
-        Writes the given string at the beginning of the currently selected EF.
-        Use the command 'get_status' to show the selected EF.
-
-
-        @param bytes
-            Hex string (case insensitive and can have whitespaces or not, doesn't matter)
-            with the data (HEX ENCODED) to write
-        """
-        if not args:
-            print ("No data supplied. See 'help write_binary'")
-            return None
-
-        # We don't care about the format -> remove spaces and group in pairs
-        args = args.replace (" ", "")
-
-        if (len (args) % 2) != 0:
-            print ("ERROR: Odd-length string")
-            return None
-
-        data = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
-        cmd = SmartCardCommands.UPDATE_BINARY (data)
-        res = self.send (cmd)
-
-        if not res:
-            print ("Couldn't get a response from the SmartCard")
-            return None
-
-        # SW1 == 0x90 means that the process executed correctly
-        if res [1] == 0x90:
-
-            print ("Data successfully written")
-
-        else:
-
-            print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' "
-                "instead".format (hex (res [1]), hex (res [2]))
-            )
-            return None
 
 
 
