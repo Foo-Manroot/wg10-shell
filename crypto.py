@@ -42,9 +42,9 @@ class SmartCardCommands (Enum):
     GET_RESPONSE = lambda length: [ 0, 0xc0, 0, 0, length ]
     INTERNAL_AUTHN = lambda challenge: [ 0x00, 0x88, 0x00, 0x00, 0x08 ] + challenge
     INTERNAL_AUTHN_LOCAL = lambda challenge: [ 0x00, 0x88, 0x00, 0x80, 0x08 ] + challenge
-    SELECT_MF = lambda mf_id: [ 0x00, 0xa4, 0x04, 0x00, len (mf_id) ] + mf_id
-    SELECT_DF = lambda df_id: [ 0x00, 0xa4, 0x04, 0x00, len (df_id) ] + df_id
-    SELECT_EF = lambda ef_id: [ 0x00, 0xa4, 0x02, 0x00, len (ef_id) ] + ef_id
+    SELECT_NAME = lambda name_hex: [ 0x00, 0xa4, 0x04, 0x00, len (name_hex) ] + name_hex
+    SELECT_ID = lambda ident: [ 0x00, 0xa4, 0x02, 0x00, len (ident) ] + ident
+    READ_BINARY = lambda num_bytes: [ 0x00, 0xb0, 0x00, 0x00, num_bytes ]
 
 
 
@@ -457,9 +457,46 @@ class Shell (cmd.Cmd):
         self.crypto.NT = 0
         self.sc_reader = None
         self.observer = SmartCardObserver ()
-        self.selected_mf = None
-        self.selected_df = None
-        self.selected_ef = None
+        self.selected_dir = None
+        self.selected_file = None
+
+
+    def do_get_status (self, args):
+        """
+        Prints the current status of the object (NT, master key...)
+        """
+        msg = "This value hasn't been initialized"
+        print ("NT (counter) = "
+                + (hex (self.crypto.NT) if self.crypto.NT else msg)
+        )
+        print ("Session Key =  "
+                + (binascii.hexlify (self.crypto.SK).decode ("utf-8")
+                    if self.crypto.SK else msg
+                )
+        )
+        print ("Temporal Key = "
+                + (binascii.hexlify (self.crypto.TK).decode ("utf-8")
+                    if self.crypto.TK else msg
+                )
+        )
+        print ("Master Key =   "
+                + (binascii.hexlify (self.crypto.MASTER_KEY).decode ("utf-8")
+                    if self.crypto.MASTER_KEY else msg
+                )
+        )
+        print ("---------------------")
+        print (
+            ("Connected with " + self.sc_reader.connection.getReader ())
+            if self.sc_reader else
+            "Not connected to any reader"
+        )
+        print ("Currently selected directory (MF or DF): {:s}".format (
+            self.selected_dir if self.selected_dir else " - ")
+        )
+        print ("Currently selected file (EF): {:s}".format (
+            self.selected_file if self.selected_file else " - ")
+        )
+
 
 
     # -----------------------------------------------
@@ -613,48 +650,6 @@ class Shell (cmd.Cmd):
         except Exception as e:
             print ("ERROR: Couldn't sign data -> " + str (e))
             return None
-
-
-
-    def do_get_status (self, args):
-        """
-        Prints the current status of the object (NT, master key...)
-        """
-        msg = "This value hasn't been initialized"
-        print ("NT (counter) = "
-                + (hex (self.crypto.NT) if self.crypto.NT else msg)
-        )
-        print ("Session Key =  "
-                + (binascii.hexlify (self.crypto.SK).decode ("utf-8")
-                    if self.crypto.SK else msg
-                )
-        )
-        print ("Temporal Key = "
-                + (binascii.hexlify (self.crypto.TK).decode ("utf-8")
-                    if self.crypto.TK else msg
-                )
-        )
-        print ("Master Key =   "
-                + (binascii.hexlify (self.crypto.MASTER_KEY).decode ("utf-8")
-                    if self.crypto.MASTER_KEY else msg
-                )
-        )
-        print ("---------------------")
-        print (
-            ("Connected with " + self.sc_reader.connection.getReader ())
-            if self.sc_reader else
-            "Not connected to any reader"
-        )
-        print ("Currently selected MF: {:s}".format (
-            self.selected_mf if self.selected_mf else " - ")
-        )
-        print ("Currently selected DF: {:s}".format (
-            self.selected_df if self.selected_df else " - ")
-        )
-        print ("Currently selected EF: {:s}".format (
-            self.selected_ef if self.selected_ef else " - ")
-        )
-
 
 
 
@@ -815,17 +810,17 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.INTERNAL_AUTHN_LOCAL ([0, 1, 2, 3, 4, 5, 6, 7])
         else:
             cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
-        res = self.send (cmd)
+        recv = self.send (cmd)
 
-        if not res:
+        if not recv:
             print ("Couldn't get a response from the SmartCard")
             return None
 
         # SW1 == 0x61 means that the process executed correctly and there's data to read
         # The number of bytes to read is encoded in SW2
-        if res [1] != 0x61:
+        if recv [1] != 0x61:
             print ("ERROR: Expected response 0x61; but received '{:s}' instead".format (
-                    hex (res [1])
+                    hex (recv [1])
                 )
             )
             return None
@@ -833,21 +828,21 @@ class Shell (cmd.Cmd):
         print ("==> Internal authentication completed. Verifying response")
 
         # Gets the response with the new NT and the signature to verify it
-        cmd = SmartCardCommands.GET_RESPONSE (res [2])
-        res = self.send (cmd)
+        cmd = SmartCardCommands.GET_RESPONSE (recv [2])
+        recv = self.send (cmd)
 
-        if not res:
+        if not recv:
             print ("Couldn't get a response from the SmartCard")
             return None
 
         # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
-        if res [1] != 0x90 or res [2] != 0x00:
+        if recv [1] != 0x90 or recv [2] != 0x00:
             print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' instead"
-                    .format (hex (res [1]), hex (res [2]))
+                    .format (hex (recv [1]), hex (recv [2]))
             )
             return None
 
-        recv = "".join ([ hex (x)[2:].zfill (2) for x in res [0] ])
+        recv = "".join ([ hex (x)[2:].zfill (2) for x in recv [0] ])
 
         if self.crypto.verify_internal_authN (recv, "0001020304050607") == 0:
             print ("Signature correct")
@@ -930,115 +925,51 @@ class Shell (cmd.Cmd):
 
 
 
-    def do_select_mf (self, args):
+
+    def do_select_dir_by_name (self, args):
         """
-        Select the specified Master File (root of the filesystem)
+        Selects the specified Dedicated File (directory in the filesystem) or Master File
+        (root directory) using its name-
 
         @param bytes
-            Hex string (case insensitive and can have whitespaces or not, doesn't matter)
-            with the identifier (HEX ENCODED) of the MF
+            String (ASCII) with the name of the directory to select
         """
         if not args:
-            print ("No MF supplied. See 'help select_mf'")
+            print ("No name supplied. See 'help select_dir_by_name'")
             return None
 
-        # We don't care about the format -> remove spaces and group in pairs
-        args = args.replace (" ", "")
+        hex_str = binascii.hexlify (args.encode ("utf-8"))
+        list_name = [ int (hex_str [i : i + 2], 16) for i in range (0, len (hex_str), 2) ]
 
-        if (len (args) % 2) != 0:
-            print ("ERROR: Odd-length string")
-            return None
-
-        # We could generate a random number; but we don't really care about it right now
-        mf_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
-        cmd = SmartCardCommands.SELECT_MF (mf_id)
-        res = self.send (cmd)
+        cmd = SmartCardCommands.SELECT_NAME (list_name)
+        recv = self.send (cmd)
         # Whether the command executed successfully or not, the selection changed
-        self.selected_mf = None
+        self.selected_dir = None
 
-        if not res:
+        if not recv:
             print ("Couldn't get a response from the SmartCard")
             return None
 
         # SW1 == 0x61 means that the process executed correctly and there's data to read
         # The number of bytes to read is encoded in SW2
-        if res [1] == 0x61:
+        if recv [1] == 0x61:
 
-            cmd = SmartCardCommands.GET_RESPONSE (res [2])
-            res = self.send (cmd)
+            cmd = SmartCardCommands.GET_RESPONSE (recv [2])
+            recv = self.send (cmd)
 
-            if not res:
+            if not recv:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
             # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
-            if (res [1] == 0x90) and (res [2] == 0x00):
+            if (recv [1] == 0x90) and (recv [2] == 0x00):
 
-                self.selected_mf = args
-                print ("Selected MF '{:s}'".format (args))
-
-            else:
-                print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' "
-                    "instead".format (hex (res [1]), hex (res [2]))
-                )
-                return None
-
-        else:
-            print ("MF not selected")
-
-
-
-
-    def do_select_df (self, args):
-        """
-        Select the specified Dedicated File (directory in the filesystem)
-
-        @param bytes
-            Hex string (case insensitive and can have whitespaces or not, doesn't matter)
-            with the identifier (HEX ENCODED) of the DF
-        """
-        if not args:
-            print ("No DF supplied. See 'help select_df'")
-            return None
-
-        # We don't care about the format -> remove spaces and group in pairs
-        args = args.replace (" ", "")
-
-        if (len (args) % 2) != 0:
-            print ("ERROR: Odd-length string")
-            return None
-
-        # We could generate a random number; but we don't really care about it right now
-        df_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
-        cmd = SmartCardCommands.SELECT_DF (df_id)
-        res = self.send (cmd)
-        # Whether the command executed successfully or not, the selection changed
-        self.selected_df = None
-
-        if not res:
-            print ("Couldn't get a response from the SmartCard")
-            return None
-
-        # SW1 == 0x61 means that the process executed correctly and there's data to read
-        # The number of bytes to read is encoded in SW2
-        if res [1] == 0x61:
-
-            cmd = SmartCardCommands.GET_RESPONSE (res [2])
-            res = self.send (cmd)
-
-            if not res:
-                print ("Couldn't get a response from the SmartCard")
-                return None
-
-            # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
-            if (res [1] == 0x90) and (res [2] == 0x00):
-
-                self.selected_mf = args
-                print ("Selected DF '{:s}'".format (args))
+                self.selected_dir = args
+                print ("Selected directory '{:s}'".format (args))
 
             else:
                 print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' "
-                    "instead".format (hex (res [1]), hex (res [2]))
+                    "instead".format (hex (recv [1]), hex (recv [2]))
                 )
                 return None
 
@@ -1047,9 +978,9 @@ class Shell (cmd.Cmd):
 
 
 
-    def do_select_ef (self, args):
+    def do_select_file_by_id (self, args):
         """
-        Select the specified Elementary File (file in the filesystem)
+        Select the specified Elementary File (file in the filesystem) by its ID
 
         @param bytes
             Hex string (case insensitive and can have whitespaces or not, doesn't matter)
@@ -1068,42 +999,96 @@ class Shell (cmd.Cmd):
 
         # We could generate a random number; but we don't really care about it right now
         ef_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
-        cmd = SmartCardCommands.SELECT_EF (ef_id)
-        res = self.send (cmd)
+        cmd = SmartCardCommands.SELECT_ID (ef_id)
+        recv = self.send (cmd)
         # Whether the command executed successfully or not, the selection changed
-        self.selected_ef = None
+        self.selected_file = None
 
-        if not res:
+        if not recv:
             print ("Couldn't get a response from the SmartCard")
             return None
 
         # SW1 == 0x61 means that the process executed correctly and there's data to read
         # The number of bytes to read is encoded in SW2
-        if res [1] == 0x61:
+        if recv [1] == 0x61:
 
-            cmd = SmartCardCommands.GET_RESPONSE (res [2])
-            res = self.send (cmd)
+            cmd = SmartCardCommands.GET_RESPONSE (recv [2])
+            recv = self.send (cmd)
 
-            if not res:
+            if not recv:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
             # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
-            if (res [1] == 0x90) and (res [2] == 0x00):
+            if (recv [1] == 0x90) and (recv [2] == 0x00):
 
-                self.selected_mf = args
+                self.selected_file = args
                 print ("Selected EF '{:s}'".format (args))
 
             else:
                 print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' "
-                    "instead".format (hex (res [1]), hex (res [2]))
+                    "instead".format (hex (recv [1]), hex (recv [2]))
                 )
                 return None
 
         else:
-            print ("EF not selected")
+            # SW1 == 0x6A and SW2 == 0x82 means "file not found"
+            if (recv [1] == 0x6A) and (recv [2] == 0x82):
+
+                print ("File not found")
+            else:
+                print ("EF not selected")
 
 
+
+    def do_read_file (self, args):
+        """
+        Reads the currently selected file and dumps it to stdout either as an HEX ENCODED
+        string (by default), or as plain (UTF-8) text, if '-t' is specified.
+
+        @param flag: string
+            It can be one of the following values:
+                -t: Output is assumed to be plain text, and is decoded using UTF-8
+        """
+        # First, it figures out the length of the file to read
+        cmd = SmartCardCommands.READ_BINARY (0x00)
+        recv = self.send (cmd)
+
+        if not recv:
+            print ("Couldn't get a response from the SmartCard")
+            return None
+
+        # Expected SW1 == 0x6C and SW2 = (bytes to read)
+        if recv [1] == 0x6C:
+
+            print ("Reading {:d} bytes from the file".format (recv [2]))
+            cmd = SmartCardCommands.READ_BINARY (recv [2])
+            recv = self.send (cmd)
+
+            if not recv:
+                print ("Couldn't get a response from the SmartCard")
+                return None
+
+            # Output dumping
+            print ("Contents of the file:")
+            print ("---------------------")
+
+            if "-t" in args:
+
+                try:
+                    s = "".join ([ chr (x) for x in recv [0] ])
+                    print (s)
+                except Exception as e:
+                    print ("Can't interpret contents as plain text: -> " + str (e))
+            else:
+                s = bytes (recv [0])
+                print (binascii.hexlify (s))
+            print ("\n---------------------")
+
+        else:
+            print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' "
+                "instead".format (hex (recv [1]), hex (recv [2]))
+            )
 
 
 
