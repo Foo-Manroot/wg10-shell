@@ -1041,10 +1041,16 @@ class Shell (cmd.Cmd):
 
 
 
-    def do_read_file (self, args):
+    def do_read_binary (self, args):
         """
-        Reads the currently selected file and dumps it to stdout either as an HEX ENCODED
+        Reads the currently selected file, assuming its structure is of a transparent
+        (binary) file, and dumps it to stdout either as an HEX ENCODED
         string (by default), or as plain (UTF-8) text, if '-t' is specified.
+
+        -> The file to read has to be selected first
+
+        -> If this command throws an error, check if the selected file is 'transparent'
+
 
         @param flag: string
             It can be one of the following values:
