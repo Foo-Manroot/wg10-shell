@@ -6,6 +6,10 @@ Diverse utils for the Smartcard assignment.
 
 Foo-Manroot - 2019
 
+Contributors:
+    MaxPowell
+    j0sNET
+
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,14 +28,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import binascii
 import pyDes
 import cmd
+import re
 
 from enum import Enum
+from binascii import unhexlify as unhex
+from binascii import hexlify as hex2
 
 # Smartcard automatic interaction
 from smartcard.CardType import AnyCardType
 from smartcard.CardRequest import CardRequest
 from smartcard.CardConnectionObserver import CardConnectionObserver
 from smartcard.util import toHexString
+
+NO_COLOR = "\x1b[0m"
+LT_RED = "\x1b[1;31m"
+LT_BLUE = "\x1b[1;34m"
+LT_CYAN = "\x1b[1;36m"
+LT_GREEN = "\x1b[1;32m"
+LT_YELLOW = "\x1b[1;33m"
+
+END_COLOR = NO_COLOR
+OK_COLOR = LT_GREEN
+CMD_COLOR = LT_BLUE
+ERROR_COLOR = LT_RED
+INFO_COLOR = LT_CYAN
+WARN_COLOR = LT_YELLOW
 
 
 
@@ -40,11 +61,12 @@ class SmartCardCommands (Enum):
     Collection of lambda functions to build the proper messages
     """
     GET_RESPONSE = lambda length: [ 0, 0xc0, 0, 0, length ]
-    INTERNAL_AUTHN = lambda challenge: [ 0x00, 0x88, 0x00, 0x00, 0x08 ] + challenge
-    INTERNAL_AUTHN_LOCAL = lambda challenge: [ 0x00, 0x88, 0x00, 0x80, 0x08 ] + challenge
+    INTERNAL_AUTHN = lambda challenge, level: [ 0x00, 0x88, 0x00, level, 0x08 ] + challenge
     SELECT_NAME = lambda name_hex: [ 0x00, 0xa4, 0x04, 0x00, len (name_hex) ] + name_hex
     SELECT_ID = lambda ident: [ 0x00, 0xa4, 0x02, 0x00, len (ident) ] + ident
-    READ_BINARY = lambda num_bytes: [ 0x00, 0xb0, 0x00, 0x00, num_bytes ]
+    READ_BINARY = lambda le, offset, ef_id: [ 0x00, 0xB0, ef_id, offset, le ]
+    VERIFY_SECRET_CODE = lambda secret_code: [ 0x00, 0x20, 0x00, 0x00, 0x08 ] + secret_code
+
 
 
 
@@ -59,24 +81,22 @@ class SmartCardObserver (CardConnectionObserver):
     def update (self, cardconnection, ccevent):
 
         if ccevent.type == "connect":
-            print ("Connected to " + cardconnection.getReader ())
-
-#        elif ccevent.type == "disconnect":
-#            print ("Disconnected from " + cardconnection.getReader ())
+            print (INFO_COLOR + "Connected to " + cardconnection.getReader () + END_COLOR)
 
         elif ccevent.type == "command":
 
             str = toHexString (ccevent.args [0])
-            print ('>', str)
+            print ('> ', str)
 
         elif ccevent.type == "response":
 
             if [] == ccevent.args[0]:
-                print ('< []', "%02X %02X" % tuple (ccevent.args [-2:]))
+                print ('< []', INFO_COLOR, "%02X %02X" % tuple (ccevent.args [-2:]), END_COLOR)
             else:
-                print ('<\033[92m', toHexString (ccevent.args [0]), '\033[00m'
-                    "%02X %02X" % tuple (ccevent.args [-2:])
+                print ('<', OK_COLOR, toHexString (ccevent.args [0]), INFO_COLOR,
+                    "%02X %02X" % tuple (ccevent.args [-2:]), END_COLOR
                 )
+
 
 
 
@@ -91,9 +111,6 @@ class Crypto ():
         self.SK (16 B): int -> Session Key
     """
 
-#    MASTER_KEY = "MASTERADMKEY_002".encode ("utf-8")
-
-
     def __init__ (self, master = "MASTERADMKEY_002".encode ("utf-8")):
         """
         Initialization of the object
@@ -105,7 +122,6 @@ class Crypto ():
         self.NT = None
         self.SK = None
         self.TK = None
-
 
 
 
@@ -291,7 +307,7 @@ class Crypto ():
         @param nt: int
             Current value of the counter
 
-        @param rand: raw bytes
+        @param random: raw bytes
                 Random number sent to the SmartCard
 
 
@@ -300,9 +316,9 @@ class Crypto ():
         """
         # The random number has to be 8 Bytes long
         if len (random) != 8:
-            print ("ERROR: he random number '{:s}' doesn't "
+            print ("ERROR: The random number '{:s}' doesn't "
                     "have the correct length (8 Bytes).".format (
-                        binascii.hexlify (random).decode ("utf-8")
+                        hex2 (random).decode ("utf-8")
                     )
             )
             return None
@@ -312,11 +328,11 @@ class Crypto ():
             print ("ERROR: Couldn't derive session key")
             return None
 
-        print ("Derived keys:\n\tTemporal -> {:s}\n\tSession ->  {:s}".format (
-                binascii.hexlify (self.TK).decode ("utf-8")
-                , binascii.hexlify (self.SK).decode ("utf-8")
-            )
-        )
+#        print ("Derived keys:\n\tTemporal -> {:s}\n\tSession ->  {:s}".format (
+#                binascii.hexlify (self.TK).decode ("utf-8")
+#                , binascii.hexlify (self.SK).decode ("utf-8")
+#            )
+#        )
 
         calc_signature = pyDes.triple_des (self.TK).encrypt (random)
         # ---------------
@@ -342,12 +358,18 @@ class Crypto ():
         # The parameter 'command' is 5 Bytes length, plus all the data that has to be
         # signed
         if len (command) < 5:
-            print ("ERROR: the command needs to be at least 5 Bytes long")
+            print (ERROR_COLOR
+                + "ERROR: the command needs to be at least 5 Bytes long"
+                + END_COLOR
+            )
             return None
 
         data = command [5:]
 
         signature = self.sign (command)[-3:]
+
+        if not signature and len (signature) != 8:
+            return None
 
         encrypted = b''
         if data:
@@ -357,9 +379,9 @@ class Crypto ():
                                     , pad = '\x00'
                     ).encrypt (data)
 
-        print ("Data:      '{:s}'".format (binascii.hexlify (data).decode ("utf-8")))
-        print ("Encrypted: '{:s}'".format (binascii.hexlify (encrypted).decode ("utf-8")))
-        print ("Signature: '{:s}'".format (binascii.hexlify (signature).decode ("utf-8")))
+        print ("Data:      '{:s}'".format (hex2 (data).decode ("utf-8")))
+        print ("Encrypted: '{:s}'".format (hex2 (encrypted).decode ("utf-8")))
+        print ("Signature: '{:s}'".format (hex2 (signature).decode ("utf-8")))
 
 
         # Header + encrypted data +
@@ -389,8 +411,10 @@ class Crypto ():
                 been calculated yet -> verify_internal_authN() is needed first)
         """
         if not self.SK:
-            print ("ERROR: The session key hasn't been initialized. Please call "
-                    "verify_internal_authN () first")
+            print (ERROR_COLOR + "ERROR: The session key hasn't been initialized. "
+                    + "Please call " + CMD_COLOR + "verify_internal_authN ()"
+                    + ERROR_COLOR + "first" + END_COLOR
+            )
             return None
 
         # For all the blocks from 0 to N-1
@@ -470,17 +494,17 @@ class Shell (cmd.Cmd):
                 + (hex (self.crypto.NT) if self.crypto.NT else msg)
         )
         print ("Session Key =  "
-                + (binascii.hexlify (self.crypto.SK).decode ("utf-8")
+                + (hex2 (self.crypto.SK).decode ("utf-8")
                     if self.crypto.SK else msg
                 )
         )
         print ("Temporal Key = "
-                + (binascii.hexlify (self.crypto.TK).decode ("utf-8")
+                + (hex2 (self.crypto.TK).decode ("utf-8")
                     if self.crypto.TK else msg
                 )
         )
         print ("Master Key =   "
-                + (binascii.hexlify (self.crypto.MASTER_KEY).decode ("utf-8")
+                + (hex2 (self.crypto.MASTER_KEY).decode ("utf-8")
                     if self.crypto.MASTER_KEY else msg
                 )
         )
@@ -525,26 +549,48 @@ class Shell (cmd.Cmd):
 
     def do_init (self, args):
         """
-        Initializes a Crypto object with the defined master key
+        Initializes a Crypto object with the defined master key.
 
-        @param master_key: hex string (optional)
-            Hexadecimal string with the master key used to derive the keys
+        SYNOPSIS
+            init [OPTION]...
+
+        DESCRIPTION
+            -l  [HEX_VALUE] This option is only used when you're going to
+                            do a "LOCAL" Internal Authenticate.
+
+        @param master_key: hex string or int number (optional)
+            - Hexadecimal string with the master key used to derive the keys
+            - Integer number of your card
         """
         if args:
             try:
-                self.crypto = Crypto (binascii.unhexlify (args))
+                binary_key_str = None
+
+                if ("-l" in args):
+                    binary_key_str = unhex(args.split(" ")[1])
+                elif args.isdigit():
+                    binary_key_str = ("MASTERADMKEY_" + args.zfill(3)).encode("utf-8")
+                else:
+                    binary_key_str = unhex (args)
+
+                self.crypto = Crypto (binary_key_str)
+
             except Exception as e:
-                print ("ERROR: Couldn't initialize the object -> " + str (e))
+                print (ERROR_COLOR
+                    + "ERROR: Couldn't initialize the object -> " + str (e)
+                    + END_COLOR
+                )
                 return None
 
         else:
             self.crypto = Crypto ()
 
         print ("Object correctly initialized with master key: 0x{:s}".format (
-                binascii.hexlify (self.crypto.MASTER_KEY).decode ("utf-8")
+                hex2 (self.crypto.MASTER_KEY).decode ("utf-8")
             )
         )
 
+    ### Low Level functions
 
     def do_ll_internal_authN (self, args):
         """
@@ -574,13 +620,13 @@ class Shell (cmd.Cmd):
 
         try:
             s = args.split (" ")
-            nt = int.from_bytes (binascii.unhexlify (s [0]), byteorder = "big")
-            random = binascii.unhexlify (s [1])
+            nt = int.from_bytes (unhex (s [0]), byteorder = "big")
+            random = unhex (s [1])
 
             ret_val = self.crypto.gen_internal_authN (nt, random)
             if ret_val:
                 print ("Response from the smartcard: {:s}".format (
-                        binascii.hexlify (ret_val).decode ("utf-8")
+                        hex2 (ret_val).decode ("utf-8")
                     )
                 )
             else:
@@ -606,12 +652,12 @@ class Shell (cmd.Cmd):
             return None
 
         try:
-            random = binascii.unhexlify (args)
+            random = unhex (args)
 
             ret_val = self.crypto.gen_internal_authN (self.crypto.NT, random)
             if ret_val:
                 print ("Response from the smartcard: {:s}".format (
-                        binascii.hexlify (ret_val).decode ("utf-8")
+                        hex2 (ret_val).decode ("utf-8")
                     )
                 )
             else:
@@ -638,12 +684,12 @@ class Shell (cmd.Cmd):
             return None
 
         try:
-            data = binascii.unhexlify (args)
+            data = unhex (args)
 
             ret_val = self.crypto.sign (data)
             if ret_val:
-                print (binascii.hexlify (ret_val))
-                print (binascii.hexlify (data + ret_val [-3:]).decode ("utf-8"))
+                print (hex2 (ret_val))
+                print (hex2 (data + ret_val [-3:]).decode ("utf-8"))
             else:
                 print ("ERROR: Couldn't sign the data")
 
@@ -674,7 +720,7 @@ class Shell (cmd.Cmd):
             return None
 
         try:
-            bin_nt = binascii.unhexlify (args)
+            bin_nt = unhex (args)
             self.crypto.NT = int.from_bytes (bin_nt, byteorder = 'big')
 
         except Exception as e:
@@ -698,16 +744,17 @@ class Shell (cmd.Cmd):
             return None
 
         try:
-            encrypted = self.crypto.encrypt (binascii.unhexlify (args))
+            encrypted = self.crypto.encrypt (unhex (args))
             if encrypted:
+#                print ("\nSending the command to sc...\n")
+#                self.do_send_raw (hex2 (encrypted).decode("utf-8"))
                 print (binascii.hexlify (encrypted))
             else:
-                print ("Error encrypting command")
+                print (ERROR_COLOR + "Error encrypting command" + END_COLOR)
 
         except Exception as e:
-            print ("ERROR: " + str (e))
+            print (ERROR_COLOR + "ERROR: " + str (e) + END_COLOR)
             return None
-
 
 
 
@@ -759,6 +806,48 @@ class Shell (cmd.Cmd):
 
 
 
+    def do_find_my_sc(self, args):
+        """
+        Try to find the number of your smartcard.
+        """
+        respond = self.get_session_key_from_sc()
+        if respond is None:
+            return None
+
+        # Search for the MK by comparing it to the signature
+        # of the random data sent it from the smartcard
+        possible_key = []
+        for x in range(1,100):
+            self.crypto.MASTER_KEY = ("MASTERADMKEY_"
+                + str(x).zfill(3)).encode ("utf-8")
+
+            # NT = respond[0] - 2
+            calc_signature = self.crypto.gen_internal_authN (respond[0] - 2,
+                 bytes.fromhex("0001020304050607"))
+            if calc_signature == respond[1]:
+                possible_key.append(self.crypto.MASTER_KEY.decode ("utf-8"))
+
+        if not possible_key:
+            print (INFO_COLOR
+                + "I'm afraid that's impossible to find your card number,"
+                + "you'd better ask the professor :P"
+                + END_COLOR
+            )
+        else:
+            print ("\nThese are your possible keys:\n")
+            for index in range(len(possible_key)):
+                print ("{:d}. {:s}".format (
+                        index + 1,
+                        possible_key[index]
+                    )
+                )
+            print (INFO_COLOR
+                + "\nNEXT: type the [init command] with one of the MKs listed above.\n"
+                + END_COLOR
+            )
+
+
+
     def send (self, cmd):
         """
         Sends the given command (an int array) to the reader and returns the response
@@ -777,22 +866,19 @@ class Shell (cmd.Cmd):
             , or (None, None, None), if there has been an error
         """
         if not self.sc_reader:
-            print ("No connection to the reader. Please, use the command 'connect'")
+            print (ERROR_COLOR
+                + "No connection to the reader. Please, use the command "
+                + CMD_COLOR + "'connect'" + END_COLOR
+            )
             return (None, None, None)
 
         else:
             try:
-
-                ret = self.sc_reader.connection.transmit (cmd)
-                if ret:
-                    return ret
-                else:
-                    return (None, None, None)
+                return self.sc_reader.connection.transmit (cmd)
 
             except Exception as e:
-                print ("ERROR: " + str (e))
+                print (ERROR_COLOR + "ERROR: " + str (e) + END_COLOR)
                 return (None, None, None)
-
 
 
 
@@ -851,6 +937,68 @@ class Shell (cmd.Cmd):
 
 
 
+    def get_session_key_from_sc(self, challenge = [0, 1, 2, 3, 4, 5, 6, 7], level = 0x00):
+        """
+        Sets a valid session key for the current DF via "Internal Authenticate" command.
+
+        @param challenge: int array
+            8-byte random data
+
+        @param level: hex
+            A global level is used to calculate a SK with the MF data.
+            - global  0x00 (by default)
+            - local   0x80
+
+        @return: (int, int) | None
+            A tuple with the following elements:
+            - The 2 first bytes is the current NT in the card
+            - The 8 following bytes is the signature of the random data sent
+            , or None, if there has been an error.
+        """
+        # We could generate a random number; but we don't really care about it right now
+        cmd = SmartCardCommands.INTERNAL_AUTHN (challenge, level)
+        res = self.send (cmd)
+
+        if not res:
+            print ("Couldn't get a response from the SmartCard")
+            return None
+
+        # SW1 == 0x61 means that the process executed correctly and there's data to read
+        # The number of bytes to read is encoded in SW2
+        if res [1] != 0x61:
+            print ("ERROR: Expected response 0x61; but received '{:s}' instead".format (
+                    hex (res [1])
+                )
+            )
+            return None
+
+        print ("==> Internal authentication completed. Verifying response...")
+
+        # Gets the response with the new NT and the signature to verify it
+        cmd = SmartCardCommands.GET_RESPONSE (res [2])
+        res = self.send (cmd)
+
+        if not res:
+            print ("Couldn't get a response from the SmartCard")
+            return None
+
+        # SW1,SW2 == 0x90,0x00 -> Everything OK and no more data to read
+        if res [1] != 0x90 or res [2] != 0x00:
+            print ("ERROR: Expected response 0x90 0x00; but received '{:s} {:s}' instead"
+                    .format (hex (res [1]), hex (res [2]))
+            )
+            return None
+
+        recv = unhex("".join ([ hex (x)[2:].zfill (2) for x in res [0] ]))
+
+        # We extract the NT and Signature from the card's response
+        nt = int.from_bytes (recv [:2], byteorder = "big")
+        signature = recv [2:]
+
+        return nt, signature
+
+
+
     def do_send_raw (self, args):
         """
         Sends the raw bytes provided in the input to the reader and prints its response.
@@ -868,20 +1016,27 @@ class Shell (cmd.Cmd):
         cmd = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
 
         recv = self.send (cmd)
+
         if not recv:
             print ("Couldn't get a response from the SmartCard")
 
         # Checks if there's a response from the smartcard and consumes it
-        if recv [1] == 0x61:
-            cmd = SmartCardCommands.GET_RESPONSE (recv [2])
-            self.send (cmd)
+        try:
+            if recv [1] == 0x61:
+                cmd = SmartCardCommands.GET_RESPONSE (recv [2])
+                self.send (cmd)
+        except TypeError as e:
+            print (ERROR_COLOR + "ERROR: " + str (e) + END_COLOR)
 
 
 
 
     def do_send_signed (self, args):
         """
-        Signes the provided command and sends it.
+        Sign the (command || data) provided and send it to the sc
+        to later verify its response.
+
+        Notice: CLA || INS || P1 || P2 || Lc || DATA (where Lc = len(data) + 3)
 
         @param bytes
             Hex string (case insensitive and can have whitespaces or not, doesn't matter)
@@ -893,36 +1048,52 @@ class Shell (cmd.Cmd):
             print ("ERROR: Odd-length string")
             return None
 
+        # Secure Messaging Mechanism
         cmd = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
-        signature = list (self.crypto.sign (bytes (cmd)))
+        calc_signature = list (self.crypto.sign (bytes (cmd)))
 
-        if not signature:
+        if not calc_signature:
             print ("The signature couldn't be calculated")
             return None
 
-        recv = self.send (cmd + signature [-3:])
+        # Add the 3 least significant bytes to the end of the plain data, and
+        # Send the new command
+        recv = self.send (cmd + calc_signature [-3:])
         if not recv:
             print ("Couldn't get a response from the SmartCard")
 
-
-        # Checks the response of the smartcard with the rest of the signature
-        if recv [1] != 0x61:
-            print ("WARNING: Couldn't verify the signature from the smartcard")
-
-        else:
-            # Should read 3 Bytes (the first three Bytes of the signature)
-            cmd = SmartCardCommands.GET_RESPONSE (recv [2])
-            verification = self.send (cmd)
-
-            if (verification
-                and
-                (verification [2] == list (signature [:3]))
-            ):
-                print ("Signature returned from the smartcard verified")
+        try:
+            # Checks the response of the smartcard with the rest of the signature
+            if recv[1] == 0x6A and recv[2] == 0x82:
+                print (WARN_COLOR +"\nWARNING: The file is not or cannot be selected. "
+                    + "Try to select it with: select_ef [your EF_ID] command.\n" + END_COLOR 
+                )
+                return None
+            
+            if recv [1] != 0x61:
+                print (WARN_COLOR 
+                    + "WARNING: Couldn't verify the signature from the smartcard"
+                    + END_COLOR
+                )
 
             else:
-                print ("WARNING: Verification of the signature failed.")
+                # We verified the 3-bytes of the cryptogram (signature)
+                cmd = SmartCardCommands.GET_RESPONSE (recv [2])
+                recv_verification = self.send (cmd)
 
+                if (recv_verification
+                    and   # 3 most significant bytes
+                    (list (calc_signature [:3]) == recv_verification [2])
+                ):
+                    print (INFO_COLOR 
+                        + "\nSignature returned from the smartcard verified!\n" 
+                        + END_COLOR
+                    )
+
+                else:
+                    print ("WARNING: Verification of the signature failed.")
+        except TypeError as e:
+            print (ERROR_COLOR + "ERROR: " + str (e) + END_COLOR)
 
 
 
@@ -938,7 +1109,7 @@ class Shell (cmd.Cmd):
             print ("No name supplied. See 'help select_dir_by_name'")
             return None
 
-        hex_str = binascii.hexlify (args.encode ("utf-8"))
+        hex_str = hex2 (args.encode ("utf-8"))
         list_name = [ int (hex_str [i : i + 2], 16) for i in range (0, len (hex_str), 2) ]
 
         cmd = SmartCardCommands.SELECT_NAME (list_name)
@@ -974,7 +1145,7 @@ class Shell (cmd.Cmd):
                 return None
 
         else:
-            print ("DF not selected")
+            print (WARN_COLOR + "DF or MF not selected" + END_COLOR)
 
 
 
@@ -994,7 +1165,7 @@ class Shell (cmd.Cmd):
         args = args.replace (" ", "")
 
         if (len (args) % 2) != 0:
-            print ("ERROR: Odd-length string")
+            print (ERROR_COLOR + "ERROR: Odd-length string" + END_COLOR)
             return None
 
         # We could generate a random number; but we don't really care about it right now
@@ -1042,6 +1213,50 @@ class Shell (cmd.Cmd):
 
 
     def do_read_binary (self, args):
+        """
+        Read the content from a transparent binary file.
+
+        USE: You can use whitespace, comma or a pipe
+             to separate the arguments.
+
+        $_$ read_binary [length] [offset] [ef_id]
+
+        @param int array
+            [length]    Number of bytes to read.
+            [offset]    Offset in bytes from the first byte to read.
+            [ef_id]     ID of your EF for "implicit selection".
+                        (Skip for direct selection)
+        """
+        try:
+            params = list(map(int, filter(None, re.split('[,| ]', args))))
+            p1 = 0
+
+            if len(params) < 2 or len(params) > 3:
+                self.do_help("read_binary")
+                return None
+
+            if not all(x >= 0 for x in params):
+                print ("Warning: all the number must be greater"
+                    + "or equal to zero."
+                )
+                return None
+
+            # To use implicit selection
+            if (len(params) == 3
+                and (params[2] > 1 and params[2] <= 30)):
+                # b8=1, b7=0. b6=0
+                # b5...b1 = ef_id = P1
+                p1 = int('100{0:05b}'.format(params[2]), 2)
+
+            cmd = SmartCardCommands.READ_BINARY (params[0], params[1], p1)
+            self.do_send_raw(cmd)
+
+        except ValueError:
+            print ("ERROR: All arguments must be integer type!")
+
+
+
+    def do_read_full_binary (self, args):
         """
         Reads the currently selected file, assuming its structure is of a transparent
         (binary) file, and dumps it to stdout either as an HEX ENCODED
@@ -1098,6 +1313,51 @@ class Shell (cmd.Cmd):
 
 
 
+    def do_verify_secret_code(self, args):
+        """
+        Compare the received "secret code" (from IFD) with the secret code
+        previously stored in the sc.
+
+        @param secret_code: hex string
+            secret_code to encrypt and then verify it
+        """
+        if not args:
+            print (WARN_COLOR
+                + "Not enough arguments. Execute 'help verify_secret_code' for more "
+                + "info." + END_COLOR
+            )
+            return None
+
+        if not self.crypto.SK:
+            print (ERROR_COLOR
+                + "ERROR: The session key hasn't been initialized. Please call "
+                + CMD_COLOR + "internal_auth" + ERROR_COLOR + " first"
+                + END_COLOR
+            )
+            return None
+
+        data = unhex(args)
+        encrypted = b''
+
+        try:
+            if data:
+                encrypted = pyDes.triple_des (self.crypto.SK
+                                        , IV = b'\x00' * 8
+                                        , mode = pyDes.CBC
+                                        , pad = '\x00'
+                        ).encrypt (data)
+
+            cmd = SmartCardCommands.VERIFY_SECRET_CODE (hex2(encrypted))
+            self.do_send_raw(cmd)
+        except Exception as e:
+            print (ERROR_COLOR
+                + "ERROR: Couldn't verify the secret code -> " + str (e)
+                + END_COLOR
+            )
+            return None
+
+
+
 if __name__ == "__main__":
 
     s = Shell ()
@@ -1118,11 +1378,3 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt as e:
         s.do_quit (None)
-
-#    ret = c.verify_internal_authN ("001854C51228DBCBE80C", "0001020304050607")
-#
-#    d = b"\x00\x01\x02\x03\x04\x05\x06\x07"
-#    print (binascii.hexlify (c.sign (d * 3)))
-#
-#    if ret == 0:
-#        print ("Verification done")
