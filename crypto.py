@@ -61,7 +61,8 @@ class SmartCardCommands (Enum):
     Collection of lambda functions to build the proper messages
     """
     GET_RESPONSE = lambda length: [ 0, 0xc0, 0, 0, length ]
-    INTERNAL_AUTHN = lambda challenge, level: [ 0x00, 0x88, 0x00, level, 0x08 ] + challenge
+    INTERNAL_AUTHN = lambda challenge: [ 0x00, 0x88, 0x00, 0x00, 0x08 ] + challenge
+    INTERNAL_AUTHN_LOCAL = lambda challenge: [ 0x00, 0x88, 0x00, 0x80, 0x08 ] + challenge
     SELECT_NAME = lambda name_hex: [ 0x00, 0xa4, 0x04, 0x00, len (name_hex) ] + name_hex
     SELECT_ID = lambda ident: [ 0x00, 0xa4, 0x02, 0x00, len (ident) ] + ident
     READ_BINARY = lambda le, offset, ef_id: [ 0x00, 0xB0, ef_id, offset, le ]
@@ -81,7 +82,11 @@ class SmartCardObserver (CardConnectionObserver):
     def update (self, cardconnection, ccevent):
 
         if ccevent.type == "connect":
-            print (INFO_COLOR + "Connected to " + cardconnection.getReader () + END_COLOR)
+            print (INFO_COLOR
+                , "Connected to "
+                , cardconnection.getReader ()
+                , END_COLOR
+            )
 
         elif ccevent.type == "command":
 
@@ -91,10 +96,18 @@ class SmartCardObserver (CardConnectionObserver):
         elif ccevent.type == "response":
 
             if [] == ccevent.args[0]:
-                print ('< []', INFO_COLOR, "%02X %02X" % tuple (ccevent.args [-2:]), END_COLOR)
+                print ('< []'
+                    , INFO_COLOR
+                    , "%02X %02X" % tuple (ccevent.args [-2:])
+                    , END_COLOR
+                )
             else:
-                print ('<', OK_COLOR, toHexString (ccevent.args [0]), INFO_COLOR,
-                    "%02X %02X" % tuple (ccevent.args [-2:]), END_COLOR
+                print ('<'
+                    , OK_COLOR
+                    , toHexString (ccevent.args [0])
+                    , INFO_COLOR
+                    , "%02X %02X" % tuple (ccevent.args [-2:])
+                    , END_COLOR
                 )
 
 
@@ -1066,12 +1079,13 @@ class Shell (cmd.Cmd):
             # Checks the response of the smartcard with the rest of the signature
             if recv[1] == 0x6A and recv[2] == 0x82:
                 print (WARN_COLOR +"\nWARNING: The file is not or cannot be selected. "
-                    + "Try to select it with: select_ef [your EF_ID] command.\n" + END_COLOR 
+                    + "Try to select it with: select_ef [your EF_ID] command.\n"
+                    + END_COLOR
                 )
                 return None
-            
+
             if recv [1] != 0x61:
-                print (WARN_COLOR 
+                print (WARN_COLOR
                     + "WARNING: Couldn't verify the signature from the smartcard"
                     + END_COLOR
                 )
@@ -1085,8 +1099,8 @@ class Shell (cmd.Cmd):
                     and   # 3 most significant bytes
                     (list (calc_signature [:3]) == recv_verification [2])
                 ):
-                    print (INFO_COLOR 
-                        + "\nSignature returned from the smartcard verified!\n" 
+                    print (INFO_COLOR
+                        + "\nSignature returned from the smartcard verified!\n"
                         + END_COLOR
                     )
 
