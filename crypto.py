@@ -550,10 +550,7 @@ class Shell (cmd.Cmd):
         """
         Exits the shell.
         """
-        if self.sc_reader:
-            print ("Disconnecting the reader...")
-            self.sc_reader.connection.disconnect ()
-
+        self.do_disconnect (args)
         print ("Bye :)")
         return True
 
