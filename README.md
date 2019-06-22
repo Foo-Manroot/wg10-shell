@@ -32,3 +32,12 @@ For the moment, there are two types of messages:
   - The rest of the commands usually will **interact** in some way or another **with the smartcard reader**. If there's none, the command will fail
 
 
+# Project's structure
+
+There are three different packages with their own modules:
+  - **cli**: Everything that has to do with the CLI shell
+  - **crypto**: Cryptographic functions, to be able to send authenticated commands to the Smart Card
+  - **scard**: Functions related to the communication with the Smart Card
+
+From the main script, `main.py`, these different modules are called and their functionality is used to create a shell with which we can exchange data with the WG10 Smart Card.
+
