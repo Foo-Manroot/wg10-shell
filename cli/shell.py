@@ -26,6 +26,8 @@ import re
 import binascii
 import cmd
 
+import pyDes
+
 # Smartcard automatic interaction
 from smartcard.CardType import AnyCardType
 from smartcard.CardRequest import CardRequest
@@ -134,10 +136,10 @@ class Shell (cmd.Cmd):
         Initializes a Crypto object with the defined master key.
 
         SYNOPSIS
-            init [OPTION]...
+            init [-l] <master_key>
 
         DESCRIPTION
-            -l  [HEX_VALUE] This option is only used when you're going to
+            -l  <HEX_VALUE> This option is only used when you're going to
                             do a "LOCAL" Internal Authenticate.
 
         @param master_key: hex string or int number (optional)
@@ -150,8 +152,18 @@ class Shell (cmd.Cmd):
 
                 if ("-l" in args):
                     binary_key_str = binascii.unhexlify (args.split(" ")[1])
-                elif args.isdigit():
-                    binary_key_str = ("MASTERADMKEY_" + args.zfill(3)).encode("utf-8")
+                elif args.isdigit ():
+                    # Only 16 Byte keys => at most 2 digits
+                    if len (args) > 2:
+                        print (ERROR_COLOR
+                            + "ERROR: You can only initialize the default key with at "
+                            + "most 2 digits"
+                            + END_COLOR
+                        )
+                        return None
+                    else:
+                        binary_key_str = ("MASTERADMKEY_" + args.zfill (3))\
+                                            .encode ("utf-8")
                 else:
                     binary_key_str = binascii.unhexlify (args)
 
@@ -480,7 +492,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
         recv = self.send (cmd)
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -499,7 +511,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.GET_RESPONSE (recv [2])
         recv = self.send (cmd)
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -599,7 +611,7 @@ class Shell (cmd.Cmd):
 
         recv = self.send (cmd)
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
 
         # Checks if there's a response from the smartcard and consumes it
@@ -641,7 +653,7 @@ class Shell (cmd.Cmd):
         # Add the 3 least significant bytes to the end of the plain data, and
         # Send the new command
         recv = self.send (cmd + calc_signature [-3:])
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
 
         try:
@@ -700,7 +712,7 @@ class Shell (cmd.Cmd):
         # Whether the command executed successfully or not, the selection changed
         self.selected_dir = None
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -711,7 +723,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.GET_RESPONSE (recv [2])
             recv = self.send (cmd)
 
-            if not recv:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
@@ -758,7 +770,7 @@ class Shell (cmd.Cmd):
         # Whether the command executed successfully or not, the selection changed
         self.selected_file = None
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -769,7 +781,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.GET_RESPONSE (recv [2])
             recv = self.send (cmd)
 
-            if not recv:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
@@ -858,7 +870,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.READ_BINARY (0x00)
         recv = self.send (cmd)
 
-        if not recv:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -869,7 +881,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.READ_BINARY (recv [2])
             recv = self.send (cmd)
 
-            if not recv:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
@@ -931,7 +943,7 @@ class Shell (cmd.Cmd):
                         ).encrypt (data)
 
             cmd = SmartCardCommands.VERIFY_SECRET_CODE (binascii.hexlify (encrypted))
-            self.do_send_raw(cmd)
+            self.send (cmd)
         except Exception as e:
             print (ERROR_COLOR
                 + "ERROR: Couldn't verify the secret code -> " + str (e)

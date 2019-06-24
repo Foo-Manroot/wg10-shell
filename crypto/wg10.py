@@ -244,7 +244,7 @@ class Crypto ():
         if len (random) != 8:
             print ("ERROR: The random number '{:s}' doesn't "
                     "have the correct length (8 Bytes).".format (
-                        hex2 (random).decode ("utf-8")
+                        binascii.hexlify (random).decode ("utf-8")
                     )
             )
             return None
@@ -305,9 +305,9 @@ class Crypto ():
                                     , pad = '\x00'
                     ).encrypt (data)
 
-        print ("Data:      '{:s}'".format (hex2 (data).decode ("utf-8")))
-        print ("Encrypted: '{:s}'".format (hex2 (encrypted).decode ("utf-8")))
-        print ("Signature: '{:s}'".format (hex2 (signature).decode ("utf-8")))
+        print ("Data:      '{:s}'".format (binascii.hexify (data).decode ("utf-8")))
+        print ("Encrypted: '{:s}'".format (binascii.hexify (encrypted).decode ("utf-8")))
+        print ("Signature: '{:s}'".format (binascii.hexify (signature).decode ("utf-8")))
 
 
         # Header + encrypted data +
