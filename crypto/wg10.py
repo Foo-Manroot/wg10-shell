@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 import binascii
-import pyDes
+from Crypto.Cipher import DES3
 
 
 class Crypto ():
@@ -74,11 +74,11 @@ class Crypto ():
 
         # 3DES (MK1 || MK2, data)
         deskey = self.MASTER_KEY
-        TK1 = pyDes.triple_des (deskey).encrypt (data)
+        TK1 = DES3.new (deskey).encrypt (data)
 
         # 3DES (MK2 || MK1, data)
         deskey = self.MASTER_KEY [8:] + self.MASTER_KEY [:8]
-        TK2 = pyDes.triple_des (deskey).encrypt (data)
+        TK2 = DES3.new (deskey).encrypt (data)
 
         self.TK = TK1 + TK2
         return True
@@ -117,11 +117,11 @@ class Crypto ():
 
         # 3DES (MK1 || MK2, data)
         deskey = self.MASTER_KEY
-        SK1 = pyDes.triple_des (deskey).encrypt (data)
+        SK1 = DES3.new (deskey).encrypt (data)
 
         # 3DES (MK2 || MK1, data)
         deskey = self.MASTER_KEY [8:] + self.MASTER_KEY [:8]
-        SK2 = pyDes.triple_des (deskey).encrypt (data)
+        SK2 = DES3.new (deskey).encrypt (data)
 
         self.SK = SK1 + SK2
 
@@ -198,7 +198,7 @@ class Crypto ():
         )
 
         # 3DES (TK, rand) == msg
-        calc_signature = pyDes.triple_des (self.TK).encrypt (rand)
+        calc_signature = DES3.new (self.TK).encrypt (rand)
 
         if calc_signature != signature:
             print ("ERROR: Verification failed. Should be '{:s}', "
@@ -260,7 +260,7 @@ class Crypto ():
 #            )
 #        )
 
-        calc_signature = pyDes.triple_des (self.TK).encrypt (random)
+        calc_signature = DES3.new (self.TK).encrypt (random)
         # ---------------
         # Everything finished -> the state can be changed
         self.NT = (nt + 2)
@@ -299,10 +299,9 @@ class Crypto ():
 
         encrypted = b''
         if data:
-            encrypted = pyDes.triple_des (self.SK
+            encrypted = DES3.new (self.SK
                                     , IV = b'\x00' * 8
-                                    , mode = pyDes.CBC
-                                    , pad = '\x00'
+                                    , mode = DES3.MODE_CBC
                     ).encrypt (data)
 
         print ("Data:      '{:s}'".format (hex2 (data).decode ("utf-8")))
@@ -360,9 +359,9 @@ class Crypto ():
             current_block = [ (current_block [j] ^ prev_block [j]) for j in range (8) ]
 
             if i < (len (data) - 8):
-                prev_block = pyDes.des (self.SK [:8]).encrypt (current_block)
+                prev_block = DES3.new (self.SK [:8]).encrypt (current_block)
             else:
-                signature = pyDes.triple_des (self.SK).encrypt (current_block)
+                signature = DES3.new (self.SK).encrypt (current_block)
 
         return signature
 
