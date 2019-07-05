@@ -34,4 +34,4 @@ class SmartCardCommands (Enum):
     SELECT_NAME = lambda name_hex: [ 0x00, 0xa4, 0x04, 0x00, len (name_hex) ] + name_hex
     SELECT_ID = lambda ident: [ 0x00, 0xa4, 0x02, 0x00, len (ident) ] + ident
     READ_BINARY = lambda le, offset, ef_id: [ 0x00, 0xB0, ef_id, offset, le ]
-    VERIFY_SECRET_CODE = lambda secret_code: [ 0x00, 0x20, 0x00, 0x00, 0x08 ] + secret_code
+    VERIFY_SECRET_CODE = lambda secret_code: [ 0x00, 0x20, 0x00, 0x00, 0x08 ] + [ secret_code ]

@@ -26,6 +26,8 @@ import re
 import binascii
 import cmd
 
+from Crypto.Cipher import DES3
+
 # Smartcard automatic interaction
 from smartcard.CardType import AnyCardType
 from smartcard.CardRequest import CardRequest
@@ -651,6 +653,7 @@ class Shell (cmd.Cmd):
         # Add the 3 least significant bytes to the end of the plain data, and
         # Send the new command
         recv = self.send (cmd + calc_signature [-3:])
+
         if not recv [0]:
             print ("Couldn't get a response from the SmartCard")
 
@@ -934,14 +937,13 @@ class Shell (cmd.Cmd):
 
         try:
             if data:
-                encrypted = pyDes.triple_des (self.crypto.SK
+                encrypted = DES3.new (self.crypto.SK
                                         , IV = b'\x00' * 8
-                                        , mode = pyDes.CBC
-                                        , pad = '\x00'
+                                        , mode = DES3.MODE_CBC
                         ).encrypt (data)
 
             cmd = SmartCardCommands.VERIFY_SECRET_CODE (binascii.hexlify (encrypted))
-            self.do_send_raw(cmd)
+            self.send (cmd)
         except Exception as e:
             print (ERROR_COLOR
                 + "ERROR: Couldn't verify the secret code -> " + str (e)

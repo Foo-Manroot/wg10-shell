@@ -8,7 +8,7 @@ Written by Foo-Manroot - 2019
 
 This is a standalone script file (though it may be advisable to split it into smaller modules...) for **Python 3** and has the following requirements (you may want to create a `virtualenv` for it):
 
-  - [pyDes](https://github.com/twhiteman/pyDes), for the encryption calculations
+  - [pyCryptoDome](https://pycryptodome.readthedocs.io/en/latest/src/introduction.html), for the encryption calculations
   - [pyscard](https://pyscard.sourceforge.io/), to interact with the smartcard. This module needs also the [pcscd](https://pcsclite.apdu.fr/) server to work. Also, when installing with `pip` you may need `libpcsclite-dev` to compile.
 
 
