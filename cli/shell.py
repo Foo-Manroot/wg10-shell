@@ -492,7 +492,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.INTERNAL_AUTHN ([0, 1, 2, 3, 4, 5, 6, 7])
         recv = self.send (cmd)
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -511,7 +511,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.GET_RESPONSE (recv [2])
         recv = self.send (cmd)
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -553,7 +553,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.INTERNAL_AUTHN (challenge)
         res = self.send (cmd)
 
-        if not res [0]:
+        if not res [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -572,7 +572,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.GET_RESPONSE (res [2])
         res = self.send (cmd)
 
-        if not res [0]:
+        if not res [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -611,7 +611,7 @@ class Shell (cmd.Cmd):
 
         recv = self.send (cmd)
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
 
         # Checks if there's a response from the smartcard and consumes it
@@ -654,7 +654,7 @@ class Shell (cmd.Cmd):
         # Send the new command
         recv = self.send (cmd + calc_signature [-3:])
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
 
         try:
@@ -713,7 +713,7 @@ class Shell (cmd.Cmd):
         # Whether the command executed successfully or not, the selection changed
         self.selected_dir = None
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -724,7 +724,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.GET_RESPONSE (recv [2])
             recv = self.send (cmd)
 
-            if not recv [0]:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
@@ -771,7 +771,7 @@ class Shell (cmd.Cmd):
         # Whether the command executed successfully or not, the selection changed
         self.selected_file = None
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -782,7 +782,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.GET_RESPONSE (recv [2])
             recv = self.send (cmd)
 
-            if not recv [0]:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
@@ -871,7 +871,7 @@ class Shell (cmd.Cmd):
         cmd = SmartCardCommands.READ_BINARY (0x00)
         recv = self.send (cmd)
 
-        if not recv [0]:
+        if not recv [1]:
             print ("Couldn't get a response from the SmartCard")
             return None
 
@@ -882,7 +882,7 @@ class Shell (cmd.Cmd):
             cmd = SmartCardCommands.READ_BINARY (recv [2])
             recv = self.send (cmd)
 
-            if not recv [0]:
+            if not recv [1]:
                 print ("Couldn't get a response from the SmartCard")
                 return None
 
