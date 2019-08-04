@@ -764,8 +764,15 @@ class Shell (cmd.Cmd):
             print (ERROR_COLOR + "ERROR: Odd-length string" + END_COLOR)
             return None
 
-        # We could generate a random number; but we don't really care about it right now
-        ef_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
+        try:
+            ef_id = [ int (args [i:i + 2], 16) for i in range (0, len (args), 2) ]
+        except ValueError:
+            print (ERROR_COLOR
+                + "ERROR: the argument should be a hex number (1 Byte)"
+                + END_COLOR
+            )
+            return None
+
         cmd = SmartCardCommands.SELECT_ID (ef_id)
         recv = self.send (cmd)
         # Whether the command executed successfully or not, the selection changed
