@@ -37,15 +37,18 @@ class Crypto ():
         self.SK (16 B): int -> Session Key
     """
 
-    def __init__ (self, master = "MASTERADMKEY_002".encode ("utf-8")):
+    def __init__ (self, master = "MASTERADMKEY_002".encode ("utf-8"), nt = None):
         """
         Initialization of the object
 
         @param master
                 Master key used to derive the rest of the keys
+
+        @param nt
+                Initial transaction number
         """
         self.MASTER_KEY = master
-        self.NT = None
+        self.NT = nt
         self.SK = None
         self.TK = None
 
@@ -64,7 +67,7 @@ class Crypto ():
         """
 
         # We avoid changing the state of the object until the end
-        local_nt = nt + 1
+        local_nt = (nt + 1) % pow (2, 16)
 
         #         (2 B)
         # 00 00 00 NT 00 00 00  -> 8 Bytes
@@ -107,7 +110,7 @@ class Crypto ():
             return False
 
         # We avoid changing the state of the object until the end
-        local_nt = nt + 2
+        local_nt = (nt + 2) % pow (2, 16)
 
         #         (2 B)
         # 00 00 00 NT 00 00 00  -> 8 Bytes
@@ -134,7 +137,7 @@ class Crypto ():
 
     def verify_internal_authN (self, msg, rand):
         """
-        Virifies the response received from the Internal AuthN command.
+        Verifies the response received from the Internal AuthN command.
         In the process, it updates the value of self.NT, self.TK and self.SK.
 
         @param msg: hex string
@@ -212,7 +215,7 @@ class Crypto ():
 
         # ---------------
         # Everything finished -> the state can be changed
-        self.NT = self.NT + 2
+        self.NT = (self.NT + 2) % pow (2, 16)
 
         return ret_val
 
@@ -263,7 +266,7 @@ class Crypto ():
         calc_signature = DES3.new (self.TK, mode = DES3.MODE_ECB).encrypt (random)
         # ---------------
         # Everything finished -> the state can be changed
-        self.NT = (nt + 2)
+        self.NT = (nt + 2) % pow (2, 16)
 
         return calc_signature
 
@@ -356,7 +359,9 @@ class Crypto ():
             if size < 8:
                 current_block = bytes (current_block) + b"\x00" * (8 - size)
 
-            current_block = [ (current_block [j] ^ prev_block [j]) for j in range (8) ]
+            current_block = bytes (
+                [ (current_block [j] ^ prev_block [j]) for j in range (8) ]
+            )
 
             if i < (len (data) - 8):
                 prev_block = DES3.new (self.SK [:8], mode = DES3.MODE_ECB) \
