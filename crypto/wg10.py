@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import binascii
 from Crypto.Cipher import DES3
+from Crypto.Cipher import DES
 
 
 class Crypto ():
@@ -364,7 +365,7 @@ class Crypto ():
             )
 
             if i < (len (data) - 8):
-                prev_block = DES3.new (self.SK [:8], mode = DES3.MODE_ECB) \
+                prev_block = DES.new (self.SK [:8], mode = DES.MODE_ECB) \
                                 .encrypt (current_block)
             else:
                 signature = DES3.new (self.SK, mode = DES3.MODE_ECB) \
